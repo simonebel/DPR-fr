@@ -14,6 +14,7 @@ from typing import Tuple
 
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaModel as FairseqRobertaModel
+from fairseq.models.roberta import CamembertModel
 from torch import Tensor as T
 from torch import nn
 
@@ -24,22 +25,35 @@ from .biencoder import BiEncoder
 
 logger = logging.getLogger(__name__)
 
-FairseqOptCfg = collections.namedtuple("FairseqOptCfg", ["lr", "adam_betas", "adam_eps", "weight_decay"])
+FairseqOptCfg = collections.namedtuple(
+    "FairseqOptCfg", ["lr", "adam_betas", "adam_eps", "weight_decay", "fp16_adam_stats"]
+)
 
 
 def get_roberta_biencoder_components(args, inference_only: bool = False, **kwargs):
     question_encoder = RobertaEncoder.from_pretrained(args.encoder.pretrained_file)
     ctx_encoder = RobertaEncoder.from_pretrained(args.encoder.pretrained_file)
     biencoder = BiEncoder(question_encoder, ctx_encoder)
-    optimizer = get_fairseq_adamw_optimizer(biencoder, args) if not inference_only else None
+    optimizer = (
+        get_fairseq_adamw_optimizer(biencoder, args) if not inference_only else None
+    )
     tensorizer = get_roberta_tensorizer(
-        args.encoder.pretrained_model_cfg, args.do_lower_case, args.encoder.sequence_length
+        args.encoder.pretrained_model_cfg,
+        args.do_lower_case,
+        args.encoder.sequence_length,
     )
     return tensorizer, biencoder, optimizer
 
 
 def get_fairseq_adamw_optimizer(model: nn.Module, args):
-    cfg = FairseqOptCfg(args.train.learning_rate, args.train.adam_betas, args.train.adam_eps, args.train.weight_decay)
+    cfg = FairseqOptCfg(
+        args.train.learning_rate,
+        args.train.adam_betas,
+        args.train.adam_eps,
+        args.train.weight_decay,
+        fp16_adam_stats=False,
+    )
+    print(cfg)
     return FairseqAdam(cfg, model.parameters()).optimizer
 
 
@@ -69,8 +83,66 @@ class RobertaEncoder(nn.Module):
 
 
 def get_roberta_encoder_components(
-    pretrained_file: str, pretrained_model_cfg: str, do_lower_case: bool, sequence_length: int
+    pretrained_file: str,
+    pretrained_model_cfg: str,
+    do_lower_case: bool,
+    sequence_length: int,
 ) -> Tuple[RobertaEncoder, Tensorizer]:
     encoder = RobertaEncoder.from_pretrained(pretrained_file)
-    tensorizer = get_roberta_tensorizer(pretrained_model_cfg, do_lower_case, sequence_length)
+    tensorizer = get_roberta_tensorizer(
+        pretrained_model_cfg, do_lower_case, sequence_length
+    )
+    return encoder, tensorizer
+
+
+def get_camembert_biencoder_components(args, inference_only: bool = False, **kwargs):
+    question_encoder = CamembertEncoder.from_pretrained(args.encoder.pretrained_file)
+    ctx_encoder = CamembertEncoder.from_pretrained(args.encoder.pretrained_file)
+    biencoder = BiEncoder(question_encoder, ctx_encoder)
+    optimizer = (
+        get_fairseq_adamw_optimizer(biencoder, args) if not inference_only else None
+    )
+    tensorizer = get_roberta_tensorizer(
+        args.encoder.pretrained_model_cfg,
+        args.do_lower_case,
+        args.encoder.sequence_length,
+    )
+    return tensorizer, biencoder, optimizer
+
+
+class CamembertEncoder(nn.Module):
+    def __init__(self, fairseq_roberta_hub: RobertaHubInterface):
+        super(CamembertEncoder, self).__init__()
+        self.fairseq_roberta = fairseq_roberta_hub
+
+    @classmethod
+    def from_pretrained(cls, pretrained_dir_path: str):
+        model = CamembertModel.from_pretrained(pretrained_dir_path)
+        return cls(model)
+
+    def forward(
+        self,
+        input_ids: T,
+        token_type_ids: T,
+        attention_mask: T,
+        representation_token_pos=0,
+    ) -> Tuple[T, ...]:
+        roberta_out = self.fairseq_roberta.extract_features(input_ids)
+        cls_out = roberta_out[:, representation_token_pos, :]
+        return roberta_out, cls_out, None
+
+    def get_out_size(self):
+        raise NotImplementedError
+
+
+def get_camembert_encoder_components(
+    pretrained_file: str,
+    pretrained_model_cfg: str,
+    do_lower_case: bool,
+    sequence_length: int,
+) -> Tuple[CamembertEncoder, Tensorizer]:
+    encoder = CamembertEncoder.from_pretrained(pretrained_file)
+    tensorizer = get_roberta_tensorizer(
+        pretrained_model_cfg, do_lower_case, sequence_length
+    )
     return encoder, tensorizer

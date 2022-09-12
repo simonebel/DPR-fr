@@ -39,6 +39,12 @@ def init_pytext_bert_biencoder(args, **kwargs):
 def init_fairseq_roberta_biencoder(args, **kwargs):
     if importlib.util.find_spec("fairseq") is None:
         raise RuntimeError("Please install fairseq lib")
+
+    if "camembert" in args["encoder"]["pretrained_file"].lower():
+        from .fairseq_models import get_camembert_biencoder_components
+
+        return get_camembert_biencoder_components(args, **kwargs)
+
     from .fairseq_models import get_roberta_biencoder_components
 
     return get_roberta_biencoder_components(args, **kwargs)
@@ -56,7 +62,12 @@ def init_hf_roberta_tenzorizer(args, **kwargs):
     if importlib.util.find_spec("transformers") is None:
         raise RuntimeError("Please install transformers lib")
     from .hf_models import get_roberta_tensorizer
-    return get_roberta_tensorizer(args.encoder.pretrained_model_cfg, args.do_lower_case, args.encoder.sequence_length)
+
+    return get_roberta_tensorizer(
+        args.encoder.pretrained_model_cfg,
+        args.do_lower_case,
+        args.encoder.sequence_length,
+    )
 
 
 BIENCODER_INITIALIZERS = {
