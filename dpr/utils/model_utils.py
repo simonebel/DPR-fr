@@ -16,6 +16,8 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.serialization import default_restore_location
 
+import numpy as np
+
 logger = logging.getLogger()
 
 CheckpointState = collections.namedtuple(
@@ -193,7 +195,7 @@ class EarlyStopping:
             self.best = metrics
             return False
 
-        if torch.isnan(metrics):
+        if np.isnan(metrics):
             return True
 
         if self.is_better(metrics, self.best):

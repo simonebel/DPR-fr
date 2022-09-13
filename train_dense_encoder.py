@@ -210,7 +210,7 @@ class BiEncoderTrainer(object):
             logger.info("***** Epoch %d *****", epoch)
             self._train_epoch(scheduler, epoch, eval_step, train_iterator)
 
-            if early_stopping.step():
+            if early_stopping.step(self.validation_loss_list[-1]):
                 break
 
         if cfg.local_rank in [-1, 0]:
