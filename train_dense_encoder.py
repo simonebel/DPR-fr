@@ -14,6 +14,7 @@ import logging
 import math
 import os
 import random
+from re import S
 import sys
 import time
 from typing import Tuple
@@ -49,6 +50,7 @@ from dpr.utils.model_utils import (
     get_model_file,
     get_model_obj,
     load_states_from_checkpoint,
+    EarlyStopping,
 )
 
 logger = logging.getLogger()
@@ -104,6 +106,9 @@ class BiEncoderTrainer(object):
             self._load_saved_state(saved_state)
 
         self.dev_iterator = None
+
+        self.validation_loss_list = []
+        self.training_loss_list = []
 
     def get_data_iterator(
         self,
@@ -200,9 +205,13 @@ class BiEncoderTrainer(object):
         logger.info("  Eval step = %d", eval_step)
         logger.info("***** Training *****")
 
+        early_stopping = EarlyStopping(patience=5)
         for epoch in range(self.start_epoch, int(cfg.train.num_train_epochs)):
             logger.info("***** Epoch %d *****", epoch)
             self._train_epoch(scheduler, epoch, eval_step, train_iterator)
+
+            if early_stopping.step():
+                break
 
         if cfg.local_rank in [-1, 0]:
             logger.info(
@@ -233,6 +242,8 @@ class BiEncoderTrainer(object):
                 self.best_validation_result = validation_loss
                 self.best_cp_name = cp_name
                 logger.info("New Best validation checkpoint %s", cp_name)
+
+        self.validation_loss_list.append(validation_loss)
 
     def validate_nll(self) -> float:
         logger.info("NLL validation ...")
@@ -533,6 +544,8 @@ class BiEncoderTrainer(object):
                 loss_scale=loss_scale,
             )
 
+            self.training_loss_list.append(loss.item())
+
             epoch_correct_predictions += correct_cnt
             epoch_loss += loss.item()
             rolling_train_loss += loss.item()
@@ -645,6 +658,14 @@ class BiEncoderTrainer(object):
         if not self.cfg.ignore_checkpoint_lr and saved_state.scheduler_dict:
             logger.info("Using saved scheduler_state")
             self.scheduler_state = saved_state.scheduler_dict
+
+    def _save_metrics(self):
+
+        root_dir = os.path.abspath("./")
+        metric_path = os.path.join(root_dir, "metrics.csv")
+        with open(metric_path, "w") as out:
+            out.write("train_loss,{}".format(",".join(self.training_loss_list)))
+            out.write("val_loss,{}".format(",".join(self.validation_loss_list)))
 
 
 def _calc_loss(
@@ -823,6 +844,8 @@ def main(cfg: DictConfig):
 
     if cfg.train_datasets and len(cfg.train_datasets) > 0:
         trainer.run_train()
+        trainer._save_metrics()
+
     elif cfg.model_file and cfg.dev_datasets:
         logger.info(
             "No train files are specified. Run 2 types of validation for specified model file"
