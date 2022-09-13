@@ -244,7 +244,7 @@ class BiEncoderTrainer(object):
                 self.best_cp_name = cp_name
                 logger.info("New Best validation checkpoint %s", cp_name)
 
-        self.validation_loss_list.append(validation_loss)
+            self.validation_loss_list.append(validation_loss)
 
     def validate_nll(self) -> float:
         logger.info("NLL validation ...")
@@ -545,8 +545,6 @@ class BiEncoderTrainer(object):
                 loss_scale=loss_scale,
             )
 
-            self.training_loss_list.append(loss.item())
-
             epoch_correct_predictions += correct_cnt
             epoch_loss += loss.item()
             rolling_train_loss += loss.item()
@@ -582,6 +580,7 @@ class BiEncoderTrainer(object):
                     loss.item(),
                     lr,
                 )
+                self.training_loss_list.append(loss.item())
 
             if (i + 1) % rolling_loss_step == 0:
                 logger.info("Train batch %d", data_iteration)
@@ -666,12 +665,12 @@ class BiEncoderTrainer(object):
         metric_path = os.path.join(root_dir, "metrics.csv")
         with open(metric_path, "w") as out:
             out.write(
-                "train_loss,{}".format(
+                "train_loss,{}\n".format(
                     ",".join(map(lambda x: str(x), self.training_loss_list))
                 )
             )
             out.write(
-                "val_loss,{}".format(
+                "val_loss,{}\n".format(
                     ",".join(map(lambda x: str(x), self.validation_loss_list))
                 )
             )
