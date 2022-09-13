@@ -665,10 +665,16 @@ class BiEncoderTrainer(object):
         root_dir = os.path.abspath("./")
         metric_path = os.path.join(root_dir, "metrics.csv")
         with open(metric_path, "w") as out:
-            logger.info(self.training_loss_list)
-            logger.info(self.validation_loss_list)
-            out.write("train_loss,{}".format(",".join(self.training_loss_list)))
-            out.write("val_loss,{}".format(",".join(self.validation_loss_list)))
+            out.write(
+                "train_loss,{}".format(
+                    ",".join(map(lambda x: str(x), self.training_loss_list))
+                )
+            )
+            out.write(
+                "val_loss,{}".format(
+                    ",".join(map(lambda x: str(x), self.validation_loss_list))
+                )
+            )
 
 
 def _calc_loss(
