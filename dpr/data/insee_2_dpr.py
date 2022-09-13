@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-
+import argparse
 from tqdm import tqdm
 
 from haystack.document_stores import ElasticsearchDocumentStore
@@ -15,25 +15,12 @@ setup_logger(logger)
 DATA_PATH = "/media/simon/Samsung_T5/CEDAR/data/datasets/insee_dataset.json"
 SEED = 2022
 
-"""
-{
-    "question": "....",
-    "answers": ["...", "...", "..."],
-    "positive_ctxs": [{"title": "...", "text": "...."}],
-    "negative_ctxs": ["..."],
-    "hard_negative_ctxs": ["..."],
-}
-"""
+parser = argparse.ArgumentParser(
+    description="This script is used to convert an insee datasets to a DPR format"
+)
 
-
-"""
-dicts = [
-    {
-        'text': DOCUMENT_TEXT_HERE,
-        'meta': {'name': DOCUMENT_NAME, ...}
-    }, ...
-]
-"""
+parser.add_argument("--data_path", type=str)
+parser.add_argument("--out_path", type=str)
 
 
 def build_ES_index(documents_dicts: list):
@@ -139,7 +126,7 @@ def get_hard_negative_ctxs(
     return hard_negative_ctxs
 
 
-def convert_insee_2_dpr(data_path: int, retriever: BM25Retriever):
+def convert_insee_2_dpr(data_path: str, retriever: BM25Retriever):
     """
     Convert insee summaries dataset to a dpr dataset and generate list of document for Elastic Search Retriever
     """
@@ -215,12 +202,16 @@ def split_and_save_dataset(dataset: list, out_path: str):
 
 
 def main():
-    dicts = convert_insee_2_dicts(DATA_PATH)
+    args = parser.parse_args()
+
+    if not args.data_path or not args.out_path:
+        logger.error("You must input data_patah and out_path, exiting")
+        quit()
+
+    dicts = convert_insee_2_dicts(args.data_path)
     BM25_retriever = build_ES_index(dicts)
-    dpr_dataset = convert_insee_2_dpr(DATA_PATH, BM25_retriever)
-    split_and_save_dataset(
-        dpr_dataset, "/media/simon/Samsung_T5/CEDAR/data/datasets/dpr_table/"
-    )
+    dpr_dataset = convert_insee_2_dpr(args.data_path, BM25_retriever)
+    split_and_save_dataset(dpr_dataset, args.out_path)
 
 
 if __name__ == "__main__":

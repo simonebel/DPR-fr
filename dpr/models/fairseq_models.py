@@ -53,7 +53,6 @@ def get_fairseq_adamw_optimizer(model: nn.Module, args):
         args.train.weight_decay,
         fp16_adam_stats=False,
     )
-    print(cfg)
     return FairseqAdam(cfg, model.parameters()).optimizer
 
 
