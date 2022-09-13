@@ -17,6 +17,7 @@ import transformers
 from torch import Tensor as T
 from torch import nn
 
+transformers.logging.set_verbosity_error()
 
 if transformers.__version__.startswith("4"):
     from transformers import BertConfig, BertModel
