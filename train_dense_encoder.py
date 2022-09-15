@@ -200,7 +200,7 @@ class BiEncoderTrainer(object):
             )
         else:
             scheduler = get_schedule_linear(self.optimizer, warmup_steps, total_updates)
-
+        # train_iterator.max_iterations
         eval_step = math.ceil(updates_per_epoch / cfg.train.eval_per_epoch)
         logger.info("  Eval step = %d", eval_step)
         logger.info("***** Training *****")
@@ -234,6 +234,7 @@ class BiEncoderTrainer(object):
                 validation_loss = self.validate_average_rank()
             else:
                 validation_loss = self.validate_nll()
+                
 
         if save_cp:
             cp_name = self._save_checkpoint(scheduler, epoch, iteration)
@@ -244,7 +245,7 @@ class BiEncoderTrainer(object):
                 self.best_cp_name = cp_name
                 logger.info("New Best validation checkpoint %s", cp_name)
 
-            self.validation_loss_list.append(validation_loss)
+        return validation_loss 
 
     def validate_nll(self) -> float:
         logger.info("NLL validation ...")
@@ -606,7 +607,8 @@ class BiEncoderTrainer(object):
                 self.biencoder.train()
 
         logger.info("Epoch finished on %d", cfg.local_rank)
-        self.validate_and_save(epoch, data_iteration, scheduler)
+        epoch_validation_loss = self.validate_and_save(epoch, data_iteration, scheduler)
+        self.validation_loss_list.append(epoch_validation_loss)
 
         epoch_loss = (epoch_loss / epoch_batches) if epoch_batches > 0 else 0
         logger.info("Av Loss per epoch=%f", epoch_loss)
