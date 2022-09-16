@@ -23,6 +23,7 @@ from dpr.utils.data_utils import normalize_question
 logger = logging.getLogger(__name__)
 
 TableChunk = collections.namedtuple("TableChunk", ["text", "title", "table_id"])
+csv.field_size_limit(9223372036854775807)
 
 
 class QASample:
