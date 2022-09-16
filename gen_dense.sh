@@ -6,8 +6,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --output=/home/cedar/sebel/DPR-fr/slurm_log/job_%j.out
-#SBATCH --error=/home/cedar/sebel/DPR-fr/slurm_log/job_%j.err
+#SBATCH --output=/home/cedar/sebel/DPR-fr/slurm_log/gen_dense/job_%j.out
+#SBATCH --error=/home/cedar/sebel/DPR-fr/slurm_log/gen_dense/job_%j.err
 
 source /home/cedar/sebel/miniconda3/bin/activate dpr
 set -x
