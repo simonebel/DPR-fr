@@ -25,7 +25,11 @@ from torch import Tensor as T
 from torch import nn
 
 from dpr.utils.data_utils import RepTokenSelector
-from dpr.data.qa_validation import calculate_matches, calculate_chunked_matches, calculate_matches_from_meta
+from dpr.data.qa_validation import (
+    calculate_matches,
+    calculate_chunked_matches,
+    calculate_matches_from_meta,
+)
 from dpr.data.retriever_data import KiltCsvCtxSrc, TableChunk
 from dpr.indexer.faiss_indexers import (
     DenseIndexer,
@@ -37,10 +41,19 @@ from dpr.models.biencoder import (
 )
 from dpr.options import setup_logger, setup_cfg_gpu, set_cfg_params_from_state
 from dpr.utils.data_utils import Tensorizer
-from dpr.utils.model_utils import setup_for_distributed_mode, get_model_obj, load_states_from_checkpoint
+from dpr.utils.model_utils import (
+    setup_for_distributed_mode,
+    get_model_obj,
+    load_states_from_checkpoint,
+)
 
 logger = logging.getLogger()
 setup_logger(logger)
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 
 
 def generate_question_vectors(
@@ -53,7 +66,7 @@ def generate_question_vectors(
 ) -> T:
     n = len(questions)
     query_vectors = []
-
+    question_encoder.to(device)
     with torch.no_grad():
         for j, batch_start in enumerate(range(0, n, bsz)):
             batch_questions = questions[batch_start : batch_start + bsz]
@@ -62,26 +75,33 @@ def generate_question_vectors(
                 # TODO: tmp workaround for EL, remove or revise
                 if query_token == "[START_ENT]":
                     batch_tensors = [
-                        _select_span_with_token(q, tensorizer, token_str=query_token) for q in batch_questions
+                        _select_span_with_token(q, tensorizer, token_str=query_token)
+                        for q in batch_questions
                     ]
                 else:
-                    batch_tensors = [tensorizer.text_to_tensor(" ".join([query_token, q])) for q in batch_questions]
+                    batch_tensors = [
+                        tensorizer.text_to_tensor(" ".join([query_token, q]))
+                        for q in batch_questions
+                    ]
             elif isinstance(batch_questions[0], T):
                 batch_tensors = [q for q in batch_questions]
             else:
                 batch_tensors = [tensorizer.text_to_tensor(q) for q in batch_questions]
 
-            # TODO: this only works for Wav2vec pipeline but will crash the regular text pipeline
-            max_vector_len = max(q_t.size(1) for q_t in batch_tensors)
-            min_vector_len = min(q_t.size(1) for q_t in batch_tensors)
+            # # TODO: this only works for Wav2vec pipeline but will crash the regular text pipeline
+            # max_vector_len = max(q_t.size(1) for q_t in batch_tensors)
+            # min_vector_len = min(q_t.size(1) for q_t in batch_tensors)
 
-            if max_vector_len != min_vector_len:
-                # TODO: _pad_to_len move to utils
-                from dpr.models.reader import _pad_to_len
-                batch_tensors = [_pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors]
+            # if max_vector_len != min_vector_len:
+            #     # TODO: _pad_to_len move to utils
+            #     from dpr.models.reader import _pad_to_len
 
-            q_ids_batch = torch.stack(batch_tensors, dim=0).cuda()
-            q_seg_batch = torch.zeros_like(q_ids_batch).cuda()
+            #     batch_tensors = [
+            #         _pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors
+            #     ]
+
+            q_ids_batch = torch.stack(batch_tensors, dim=0).to(device)
+            q_seg_batch = torch.zeros_like(q_ids_batch).to(device)
             q_attn_mask = tensorizer.get_attn_mask(q_ids_batch)
 
             if selector:
@@ -109,13 +129,17 @@ def generate_question_vectors(
 
 
 class DenseRetriever(object):
-    def __init__(self, question_encoder: nn.Module, batch_size: int, tensorizer: Tensorizer):
+    def __init__(
+        self, question_encoder: nn.Module, batch_size: int, tensorizer: Tensorizer
+    ):
         self.question_encoder = question_encoder
         self.batch_size = batch_size
         self.tensorizer = tensorizer
         self.selector = None
 
-    def generate_question_vectors(self, questions: List[str], query_token: str = None) -> T:
+    def generate_question_vectors(
+        self, questions: List[str], query_token: str = None
+    ) -> T:
 
         bsz = self.batch_size
         self.question_encoder.eval()
@@ -157,7 +181,9 @@ class LocalFaissRetriever(DenseRetriever):
         :return:
         """
         buffer = []
-        for i, item in enumerate(iterate_encoded_files(vector_files, path_id_prefixes=path_id_prefixes)):
+        for i, item in enumerate(
+            iterate_encoded_files(vector_files, path_id_prefixes=path_id_prefixes)
+        ):
             buffer.append(item)
             if 0 < buffer_size == len(buffer):
                 self.index.index_data(buffer)
@@ -165,7 +191,9 @@ class LocalFaissRetriever(DenseRetriever):
         self.index.index_data(buffer)
         logger.info("Data indexing completed.")
 
-    def get_top_docs(self, query_vectors: np.array, top_docs: int = 100) -> List[Tuple[List[object], List[float]]]:
+    def get_top_docs(
+        self, query_vectors: np.array, top_docs: int = 100
+    ) -> List[Tuple[List[object], List[float]]]:
         """
         Does the retrieval of the best matching passages given the query vectors batch
         :param query_vectors:
@@ -240,12 +268,16 @@ class DenseRPCRetriever(DenseRetriever):
         self.index_client.create_index(index_id, idx_cfg)
 
         def send_buf_data(buf, index_client):
-            buffer_vectors = [np.reshape(encoded_item[1], (1, -1)) for encoded_item in buf]
+            buffer_vectors = [
+                np.reshape(encoded_item[1], (1, -1)) for encoded_item in buf
+            ]
             buffer_vectors = np.concatenate(buffer_vectors, axis=0)
             meta = [encoded_item[0] for encoded_item in buf]
             index_client.add_index_data(index_id, buffer_vectors, meta)
 
-        for i, item in enumerate(iterate_encoded_files(vector_files, path_id_prefixes=path_id_prefixes)):
+        for i, item in enumerate(
+            iterate_encoded_files(vector_files, path_id_prefixes=path_id_prefixes)
+        ):
             buffer.append(item)
             if 0 < buffer_size == len(buffer):
                 send_buf_data(buffer, self.index_client)
@@ -288,6 +320,7 @@ class DenseRPCRetriever(DenseRetriever):
 
     def _wait_index_ready(self, index_id: str):
         from distributed_faiss.index_state import IndexState
+
         # TODO: move this method into IndexClient class
         while self.index_client.get_state(index_id) != IndexState.TRAINED:
             logger.info("Remote Index is not ready ...")
@@ -306,7 +339,9 @@ def validate(
     match_type: str,
 ) -> List[List[bool]]:
     logger.info("validating passages. size=%d", len(passages))
-    match_stats = calculate_matches(passages, answers, result_ctx_ids, workers_num, match_type)
+    match_stats = calculate_matches(
+        passages, answers, result_ctx_ids, workers_num, match_type
+    )
     top_k_hits = match_stats.top_k_hits
 
     logger.info("Validation results: top k documents hits %s", top_k_hits)
@@ -324,7 +359,12 @@ def validate_from_meta(
 ) -> List[List[bool]]:
 
     match_stats = calculate_matches_from_meta(
-        answers, result_ctx_ids, workers_num, match_type, use_title=True, meta_compressed=meta_compressed
+        answers,
+        result_ctx_ids,
+        workers_num,
+        match_type,
+        use_title=True,
+        meta_compressed=meta_compressed,
     )
     top_k_hits = match_stats.top_k_hits
 
@@ -405,8 +445,12 @@ def save_results_from_meta(
             "ctxs": [
                 {
                     "id": docs[c][0],
-                    "title": zlib.decompress(docs[c][2]).decode() if rpc_meta_compressed else docs[c][2],
-                    "text": zlib.decompress(docs[c][1]).decode() if rpc_meta_compressed else docs[c][1],
+                    "title": zlib.decompress(docs[c][2]).decode()
+                    if rpc_meta_compressed
+                    else docs[c][2],
+                    "text": zlib.decompress(docs[c][1]).decode()
+                    if rpc_meta_compressed
+                    else docs[c][1],
                     "is_wiki": docs[c][3],
                     "score": scores[c],
                     "has_answer": hits[c],
@@ -421,7 +465,9 @@ def save_results_from_meta(
     logger.info("Saved results * scores  to %s", out_file)
 
 
-def iterate_encoded_files(vector_files: list, path_id_prefixes: List = None) -> Iterator[Tuple]:
+def iterate_encoded_files(
+    vector_files: list, path_id_prefixes: List = None
+) -> Iterator[Tuple]:
     for i, file in enumerate(vector_files):
         logger.info("Reading file %s", file)
         id_prefix = None
@@ -443,7 +489,9 @@ def validate_tables(
     workers_num: int,
     match_type: str,
 ) -> List[List[bool]]:
-    match_stats = calculate_chunked_matches(passages, answers, result_ctx_ids, workers_num, match_type)
+    match_stats = calculate_chunked_matches(
+        passages, answers, result_ctx_ids, workers_num, match_type
+    )
     top_k_chunk_hits = match_stats.top_k_chunk_hits
     top_k_table_hits = match_stats.top_k_table_hits
 
@@ -465,7 +513,9 @@ def get_all_passages(ctx_sources):
         logger.info("Loaded ctx data: %d", len(all_passages))
 
     if len(all_passages) == 0:
-        raise RuntimeError("No passages data found. Please specify ctx_file param properly.")
+        raise RuntimeError(
+            "No passages data found. Please specify ctx_file param properly."
+        )
     return all_passages
 
 
@@ -479,7 +529,9 @@ def main(cfg: DictConfig):
     logger.info("CFG (after gpu  configuration):")
     logger.info("%s", OmegaConf.to_yaml(cfg))
 
-    tensorizer, encoder, _ = init_biencoder_components(cfg.encoder.encoder_model_type, cfg, inference_only=True)
+    tensorizer, encoder, _ = init_biencoder_components(
+        cfg.encoder.encoder_model_type, cfg, inference_only=True
+    )
 
     logger.info("Loading saved model state ...")
     encoder.load_state(saved_state, strict=False)
@@ -492,7 +544,9 @@ def main(cfg: DictConfig):
         logger.info("Selecting standard question encoder")
         encoder = encoder.question_model
 
-    encoder, _ = setup_for_distributed_mode(encoder, None, cfg.device, cfg.n_gpu, cfg.local_rank, cfg.fp16)
+    encoder, _ = setup_for_distributed_mode(
+        encoder, None, cfg.device, cfg.n_gpu, cfg.local_rank, cfg.fp16
+    )
     encoder.eval()
 
     model_to_load = get_model_obj(encoder)
@@ -542,7 +596,9 @@ def main(cfg: DictConfig):
         retriever = LocalFaissRetriever(encoder, cfg.batch_size, tensorizer, index)
 
     logger.info("Using special token %s", qa_src.special_query_token)
-    questions_tensor = retriever.generate_question_vectors(questions, query_token=qa_src.special_query_token)
+    questions_tensor = retriever.generate_question_vectors(
+        questions, query_token=qa_src.special_query_token
+    )
 
     if qa_src.selector:
         logger.info("Using custom representation token selector")
@@ -571,7 +627,9 @@ def main(cfg: DictConfig):
 
         logger.info("ctx_files_patterns: %s", ctx_files_patterns)
         if ctx_files_patterns:
-            assert len(ctx_files_patterns) == len(id_prefixes), "ctx len={} pref leb={}".format(
+            assert len(ctx_files_patterns) == len(
+                id_prefixes
+            ), "ctx len={} pref leb={}".format(
                 len(ctx_files_patterns), len(id_prefixes)
             )
         else:
@@ -588,12 +646,16 @@ def main(cfg: DictConfig):
             path_id_prefixes.extend([pattern_id_prefix] * len(pattern_files))
         logger.info("Embeddings files id prefixes: %s", path_id_prefixes)
         logger.info("Reading all passages data from files: %s", input_paths)
-        retriever.index_encoded_data(input_paths, index_buffer_sz, path_id_prefixes=path_id_prefixes)
+        retriever.index_encoded_data(
+            input_paths, index_buffer_sz, path_id_prefixes=path_id_prefixes
+        )
         if index_path:
             retriever.index.serialize(index_path)
 
     # get top k results
-    top_results_and_scores = retriever.get_top_docs(questions_tensor.numpy(), cfg.n_docs)
+    top_results_and_scores = retriever.get_top_docs(
+        questions_tensor.numpy(), cfg.n_docs
+    )
 
     if cfg.use_rpc_meta:
         questions_doc_hits = validate_from_meta(
@@ -644,7 +706,9 @@ def main(cfg: DictConfig):
             )
 
     if cfg.kilt_out_file:
-        kilt_ctx = next(iter([ctx for ctx in ctx_sources if isinstance(ctx, KiltCsvCtxSrc)]), None)
+        kilt_ctx = next(
+            iter([ctx for ctx in ctx_sources if isinstance(ctx, KiltCsvCtxSrc)]), None
+        )
         if not kilt_ctx:
             raise RuntimeError("No Kilt compatible context file provided")
         assert hasattr(cfg, "kilt_out_file")
