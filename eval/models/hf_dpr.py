@@ -14,42 +14,20 @@
 # limitations under the License.
 """ PyTorch DPR model for Open Domain Question Answering."""
 
-
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
-
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import (
-    ModelOutput,
-    logging,
-)
-from .modeling_camembert import CamembertEncoder
 from transformers.models.camembert.modeling_camembert import CamembertModel
-from transformers.models.bert.modeling_bert import BertEncoder, BertModel
 from transformers.models.dpr.configuration_dpr import DPRConfig
+from transformers.utils import ModelOutput, logging
 
+from eval.models.hf_modeling_camembert import CamembertEncoder
 
 logger = logging.get_logger(__name__)
-
-_CONFIG_FOR_DOC = "DPRConfig"
-_CHECKPOINT_FOR_DOC = "facebook/dpr-ctx_encoder-single-nq-base"
-
-DPR_CONTEXT_ENCODER_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "facebook/dpr-ctx_encoder-single-nq-base",
-    "facebook/dpr-ctx_encoder-multiset-base",
-]
-DPR_QUESTION_ENCODER_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "facebook/dpr-question_encoder-single-nq-base",
-    "facebook/dpr-question_encoder-multiset-base",
-]
-DPR_READER_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "facebook/dpr-reader-single-nq-base",
-    "facebook/dpr-reader-multiset-base",
-]
 
 
 ##########
@@ -262,95 +240,6 @@ class DPRPretrainedReader(DPRPreTrainedModel):
 ###############
 # Actual Models
 ###############
-
-
-DPR_START_DOCSTRING = r"""
-    This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
-    library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
-    etc.)
-    This model is also a PyTorch [torch.nn.Module](https://pytorch.org/docs/stable/nn.html#torch.nn.Module) subclass.
-    Use it as a regular PyTorch Module and refer to the PyTorch documentation for all matter related to general usage
-    and behavior.
-    Parameters:
-        config ([`DPRConfig`]): Model configuration class with all the parameters of the model.
-            Initializing with a config file does not load the weights associated with the model, only the
-            configuration. Check out the [`~PreTrainedModel.from_pretrained`] method to load the model weights.
-"""
-
-DPR_ENCODERS_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary. To match pretraining, DPR input sequence should be
-            formatted with [CLS] and [SEP] tokens as follows:
-            (a) For sequence pairs (for a pair title+text for example):
-            ```
-            tokens:         [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]
-            token_type_ids:   0   0  0    0    0     0       0   0   1  1  1  1   1   1
-            ```
-            (b) For single sequences (for a question for example):
-            ```
-            tokens:         [CLS] the dog is hairy . [SEP]
-            token_type_ids:   0   0   0   0  0     0   0
-            ```
-            DPR is a model with absolute position embeddings so it's usually advised to pad the inputs on the right
-            rather than the left.
-            Indices can be obtained using [`DPRTokenizer`]. See [`PreTrainedTokenizer.encode`] and
-            [`PreTrainedTokenizer.__call__`] for details.
-            [What are input IDs?](../glossary#input-ids)
-        attention_mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-            [What are attention masks?](../glossary#attention-mask)
-        token_type_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,
-            1]`:
-            - 0 corresponds to a *sentence A* token,
-            - 1 corresponds to a *sentence B* token.
-            [What are token type IDs?](../glossary#token-type-ids)
-        inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
-            Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation. This
-            is useful if you want more control over how to convert `input_ids` indices into associated vectors than the
-            model's internal embedding lookup matrix.
-        output_attentions (`bool`, *optional*):
-            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
-            tensors for more detail.
-        output_hidden_states (`bool`, *optional*):
-            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
-            more detail.
-        return_dict (`bool`, *optional*):
-            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
-"""
-
-DPR_READER_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`Tuple[torch.LongTensor]` of shapes `(n_passages, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary. It has to be a sequence triplet with 1) the question
-            and 2) the passages titles and 3) the passages texts To match pretraining, DPR `input_ids` sequence should
-            be formatted with [CLS] and [SEP] with the format:
-                `[CLS] <question token ids> [SEP] <titles ids> [SEP] <texts ids>`
-            DPR is a model with absolute position embeddings so it's usually advised to pad the inputs on the right
-            rather than the left.
-            Indices can be obtained using [`DPRReaderTokenizer`]. See this class documentation for more details.
-            [What are input IDs?](../glossary#input-ids)
-        attention_mask (`torch.FloatTensor` of shape `(n_passages, sequence_length)`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-            [What are attention masks?](../glossary#attention-mask)
-        inputs_embeds (`torch.FloatTensor` of shape `(n_passages, sequence_length, hidden_size)`, *optional*):
-            Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation. This
-            is useful if you want more control over how to convert `input_ids` indices into associated vectors than the
-            model's internal embedding lookup matrix.
-        output_attentions (`bool`, *optional*):
-            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
-            tensors for more detail.
-        output_hidden_states (`bool`, *optional*):
-            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
-            more detail.
-        return_dict (`bool`, *optional*):
-            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
-"""
 
 
 class DPRContextEncoder(DPRPretrainedContextEncoder):

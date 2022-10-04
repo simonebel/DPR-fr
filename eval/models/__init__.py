@@ -1,0 +1,2 @@
+from .haystack_dense_retriever import DensePassageRetriever
+from .hf_dpr import DPRQuestionEncoder

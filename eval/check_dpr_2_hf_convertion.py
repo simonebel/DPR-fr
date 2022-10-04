@@ -8,36 +8,29 @@
 """
  Command line tool to get dense results and validate them
 """
-from pathlib import Path
-
 import logging
+from pathlib import Path
 from typing import List
 
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 from torch import Tensor as T
-
-from dpr.utils.data_utils import RepTokenSelector
-
-from dpr.models import init_biencoder_components
-from dpr.models.biencoder import (
-    BiEncoder,
-    _select_span_with_token,
-)
-from dpr.options import setup_logger, setup_cfg_gpu, set_cfg_params_from_state
-from dpr.utils.data_utils import Tensorizer
-from dpr.utils.model_utils import (
-    setup_for_distributed_mode,
-    get_model_obj,
-    load_states_from_checkpoint,
-)
-
-from dpr_2_hf.dpr import DPRQuestionEncoder
 from transformers import CamembertModel
 
-logger = logging.getLogger()
-setup_logger(logger)
+from dpr.models import init_biencoder_components
+from dpr.models.biencoder import BiEncoder, _select_span_with_token
+from dpr.options import set_cfg_params_from_state, setup_cfg_gpu, setup_logger
+from dpr.utils.data_utils import RepTokenSelector, Tensorizer
+from dpr.utils.model_utils import (
+    get_model_obj,
+    load_states_from_checkpoint,
+    setup_for_distributed_mode,
+)
+from eval.models import DPRQuestionEncoder
+from eval.utils import get_log
+
+logger = get_log()
 
 if torch.cuda.is_available():
     device = torch.device("cuda")

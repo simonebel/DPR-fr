@@ -14,9 +14,9 @@ import logging
 import math
 import os
 import random
-from re import S
 import sys
 import time
+from re import S
 from typing import Tuple
 
 import hydra
@@ -26,31 +26,31 @@ from torch import Tensor as T
 from torch import nn
 
 from dpr.models import init_biencoder_components
-from dpr.models.biencoder import BiEncoderNllLoss, BiEncoderBatch
+from dpr.models.biencoder import BiEncoderBatch, BiEncoderNllLoss
 from dpr.options import (
-    setup_cfg_gpu,
-    set_seed,
     get_encoder_params_state_from_cfg,
     set_cfg_params_from_state,
+    set_seed,
+    setup_cfg_gpu,
     setup_logger,
 )
 from dpr.utils.conf_utils import BiencoderDatasetsCfg
 from dpr.utils.data_utils import (
+    LocalShardedDataIterator,
+    MultiSetDataIterator,
     ShardedDataIterator,
     Tensorizer,
-    MultiSetDataIterator,
-    LocalShardedDataIterator,
 )
 from dpr.utils.dist_utils import all_gather_list
 from dpr.utils.model_utils import (
-    setup_for_distributed_mode,
-    move_to_device,
-    get_schedule_linear,
     CheckpointState,
+    EarlyStopping,
     get_model_file,
     get_model_obj,
+    get_schedule_linear,
     load_states_from_checkpoint,
-    EarlyStopping,
+    move_to_device,
+    setup_for_distributed_mode,
 )
 
 logger = logging.getLogger()
@@ -234,7 +234,6 @@ class BiEncoderTrainer(object):
                 validation_loss = self.validate_average_rank()
             else:
                 validation_loss = self.validate_nll()
-                
 
         if save_cp:
             cp_name = self._save_checkpoint(scheduler, epoch, iteration)
@@ -245,7 +244,7 @@ class BiEncoderTrainer(object):
                 self.best_cp_name = cp_name
                 logger.info("New Best validation checkpoint %s", cp_name)
 
-        return validation_loss 
+        return validation_loss
 
     def validate_nll(self) -> float:
         logger.info("NLL validation ...")

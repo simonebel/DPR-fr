@@ -131,7 +131,10 @@ class CamembertEncoder(nn.Module):
         return roberta_out, cls_out, None
 
     def get_out_size(self):
-        raise NotImplementedError
+
+        return (
+            self.fairseq_roberta.model.encoder.sentence_encoder.embed_tokens.embedding_dim
+        )
 
 
 def get_camembert_encoder_components(

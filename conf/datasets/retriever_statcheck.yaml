@@ -1,0 +1,10 @@
+# @package _group_
+
+insee_test:
+  file: /media/simon/Samsung_T5/CEDAR/data/datasets/insee_ref_dpr/test.json
+
+online_test:
+  file: /media/simon/Samsung_T5/CEDAR/data/datasets/insee_ref_dpr/insee_test.json
+
+QA_fr_test:
+  file: /media/simon/Samsung_T5/CEDAR/data/datasets/QA-fr/test.json

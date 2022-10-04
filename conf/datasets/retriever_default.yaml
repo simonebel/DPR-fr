@@ -33,3 +33,6 @@ curatedtrec_test:
   _target_: dpr.data.retriever_data.CsvQASrc
   file: data.retriever.qas.curatedtrec-test
 
+insee_test:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: /media/simon/Samsung_T5/CEDAR/data/datasets/insee_ref_dpr/test.csv

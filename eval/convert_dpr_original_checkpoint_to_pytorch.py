@@ -16,15 +16,16 @@ import argparse
 import collections
 import os
 from pathlib import Path
+from typing import Dict, NamedTuple
 
 import torch
 from torch.serialization import default_restore_location
+from transformers import CamembertConfig, CamembertModel, DPRConfig
 
-from transformers import DPRConfig, CamembertConfig, RobertaModel, RobertaConfig
-from .dpr import DPRContextEncoder, DPRQuestionEncoder
+from eval.models.hf_dpr import DPRContextEncoder, DPRQuestionEncoder
+from eval.utils import get_log
 
-
-from transformers import CamembertForMaskedLM, CamembertModel
+logger = get_log()
 
 CheckpointState = collections.namedtuple(
     "CheckpointState",
@@ -41,21 +42,27 @@ CheckpointState = collections.namedtuple(
 TYPE = ["ctx_encoder", "question_encoder"]
 
 
-def load_states_from_checkpoint(model_file: str) -> CheckpointState:
-    print(f"Reading saved model from {model_file}")
+def load_states_from_checkpoint(model_file: Path) -> NamedTuple:
+    """
+    Load the checkpoint.
+    """
+    logger.info(f"Reading saved model from {model_file}")
+
     state_dict = torch.load(
         model_file, map_location=lambda s, l: default_restore_location(s, "cpu")
     )
+
     return CheckpointState(**state_dict)
 
 
 def convert_bi_encoder_fairseq_to_pytorch(
-    model_dict: dict,
+    model_dict: Dict,
     encoder_prefix: str,
-):
+) -> Dict:
     """
-    Copy/paste/tweak fairseq roberta's weights to hugging face roberta's weight .
+    Map the state dictionnary's key-value from an original fairseq checkpoint to a hugging face roberta's state dictionnary.
     """
+    logger.info("Mapping state dict")
 
     fairseq_roberta = f"{encoder_prefix}.fairseq_roberta."
     fairseq_sent_enc_prefix = fairseq_roberta + "model.encoder.sentence_encoder."
@@ -149,30 +156,14 @@ def convert_bi_encoder_fairseq_to_pytorch(
             fairseq_layer_prefix + "final_layer_norm.bias"
         ]
 
-    # # end of layer
-    # state_dict["lm_head.dense.weight"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.dense.weight"
-    # ]
-    # state_dict["lm_head.dense.bias"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.dense.bias"
-    # ]
-    # state_dict["lm_head.layer_norm.weight"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.layer_norm.weight"
-    # ]
-    # state_dict["lm_head.layer_norm.bias"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.layer_norm.bias"
-    # ]
-    # state_dict["lm_head.decoder.weight"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.weight"
-    # ]
-    # state_dict["lm_head.decoder.bias"] = model_dict[
-    #     fairseq_roberta + "model.encoder.lm_head.bias"
-    # ]
-
     return state_dict
 
 
 class DPRState:
+    """
+    Base class of an encoder state
+    """
+
     def __init__(self, src_file: Path):
         self.src_file = src_file
 
@@ -192,11 +183,16 @@ class DPRState:
 
 
 class DPRContextEncoderState(DPRState):
+    """
+    Class to convert the checkpoint of the context encoder.
+    """
+
     def load_dpr_model(self):
         model = DPRContextEncoder(
             DPRConfig(**CamembertConfig.get_config_dict("camembert-base")[0])
         )
-        print(f"Loading DPR biencoder from {self.src_file}")
+        logger.info(f"Loading DPR context encoder from {self.src_file}")
+
         saved_state = load_states_from_checkpoint(self.src_file)
         encoder, prefix = model.ctx_encoder, "ctx_model"
         state_dict = convert_bi_encoder_fairseq_to_pytorch(
@@ -207,11 +203,15 @@ class DPRContextEncoderState(DPRState):
 
 
 class DPRQuestionEncoderState(DPRState):
+    """
+    Class to convert the checkpoint of the question encoder.
+    """
+
     def load_dpr_model(self):
         model = DPRQuestionEncoder(
             DPRConfig(**CamembertConfig.get_config_dict("camembert-base")[0])
         )
-        print(f"Loading DPR biencoder from {self.src_file}")
+        logger.info(f"Loading DPR question encoder from {self.src_file}")
         saved_state = load_states_from_checkpoint(self.src_file)
         encoder, prefix = model.question_encoder, "question_model"
         state_dict = convert_bi_encoder_fairseq_to_pytorch(
@@ -221,7 +221,15 @@ class DPRQuestionEncoderState(DPRState):
         return model
 
 
-def convert(src_file: Path, dest_dir: Path):
+def convert(src_file: Path, dest_dir: Path) -> None:
+    """
+    Convert the checkpoints of each encoder from src_file to dest_dir.
+    """
+
+    logger.info(
+        f"Starting convertion with source {src_file} and destination {dest_dir}"
+    )
+
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(exist_ok=True)
 
@@ -230,31 +238,37 @@ def convert(src_file: Path, dest_dir: Path):
         model = dpr_state.load_dpr_model()
         type_dest_dir = Path(os.path.join(dest_dir, comp_type))
         model.save_pretrained(type_dest_dir)
-        model.from_pretrained(type_dest_dir)  # sanity check
+        model.from_pretrained(type_dest_dir)
+
+    logger.info("Convertion done")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    # Required parameters
+def main():
+    parser = argparse.ArgumentParser(
+        description="Script to convert a original roberta-based dpr ckpt to hf"
+    )
+
     parser.add_argument(
         "--src",
         type=str,
-        help=(
-            "Path to the dpr checkpoint file. They can be downloaded from the official DPR repo"
-            " https://github.com/facebookresearch/DPR. Note that in the official repo, both encoders are stored in the"
-            " 'retriever' checkpoints."
-        ),
+        help="Path to the original dpr checkpoint file.",
     )
     parser.add_argument(
         "--dest",
         type=str,
         default=None,
-        help="Path to the output PyTorch model directory.",
+        help="Path to the output checkpoint directory.",
     )
     args = parser.parse_args()
 
     src_file = Path(args.src)
     dest_dir = f"converted-{src_file.name}" if args.dest is None else args.dest
     dest_dir = Path(dest_dir)
+
     assert src_file.exists()
+
     convert(src_file, dest_dir)
+
+
+if __name__ == "__main__":
+    main()

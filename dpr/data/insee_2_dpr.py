@@ -1,5 +1,6 @@
 import json
 import os
+import csv
 import logging
 import argparse
 from tqdm import tqdm
@@ -15,17 +16,11 @@ setup_logger(logger)
 DATA_PATH = "/media/simon/Samsung_T5/CEDAR/data/datasets/insee_dataset.json"
 SEED = 2022
 
-parser = argparse.ArgumentParser(
-    description="This script is used to convert an insee datasets to a DPR format"
-)
-
-parser.add_argument("--data_path", type=str)
-parser.add_argument("--out_path", type=str)
-
 
 def build_ES_index(documents_dicts: list):
     """
     Build Elastic Search Index and retriever
+    see https://haystack.deepset.ai/components/document-store#initialisation
     """
     logger.info("Building Elastic Search Index")
     document_store = ElasticsearchDocumentStore(
@@ -156,13 +151,15 @@ def convert_insee_2_dpr(data_path: str, retriever: BM25Retriever):
     return dpr_dataset
 
 
-def split_and_save_dataset(dataset: list, out_path: str):
+def split_and_save_dataset(data_path: str, dataset: list, out_path: str):
     from sklearn.model_selection import train_test_split
     import random
 
     random.seed(SEED)
 
     logger.info("Splitting and saving...")
+
+    orig_data = json.load(open(data_path, "r"))
 
     questions = map(lambda x: x["question"], dataset)
     map_question_id = {question: idx for idx, question in enumerate(questions)}
@@ -183,7 +180,32 @@ def split_and_save_dataset(dataset: list, out_path: str):
     random.shuffle(dev)
     logger.info("Dev set size: {}".format(len(dev)))
 
-    test = [ex for ex in dataset if map_question_id[ex["question"]] in test_ids]
+    # need to be tsv format
+    map_orig_question_id = {
+        k: v for k, v in map(lambda x: (x[1]["query"], x[0]), orig_data.items())
+    }
+    with open("{}/test.csv".format(out_path), "w") as test_out:
+        writer = csv.writer(test_out, delimiter="\t")
+        ans = [""]
+        test = []
+        added_questions = []
+        for ex in dataset:
+            if (
+                map_question_id[ex["question"]] in test_ids
+                and ex["question"] not in added_questions
+            ):
+                added_questions.append(ex["question"])
+                orig_id = map_orig_question_id[ex["question"]]
+                orig_ex = orig_data[orig_id]
+                test.append(
+                    {
+                        "question": ex["question"],
+                        "gold": list(orig_ex["gold_tables"].keys()),
+                    }
+                )
+
+                writer.writerow([ex["question"], json.dumps(ans)])
+
     random.shuffle(test)
     logger.info("Test set size: {}".format(len(test)))
 
@@ -202,6 +224,13 @@ def split_and_save_dataset(dataset: list, out_path: str):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="This script is used to convert an insee datasets to a DPR format"
+    )
+
+    parser.add_argument("--data_path", type=str)
+    parser.add_argument("--out_path", type=str)
+
     args = parser.parse_args()
 
     if not args.data_path or not args.out_path:
@@ -211,7 +240,7 @@ def main():
     dicts = convert_insee_2_dicts(args.data_path)
     BM25_retriever = build_ES_index(dicts)
     dpr_dataset = convert_insee_2_dpr(args.data_path, BM25_retriever)
-    split_and_save_dataset(dpr_dataset, args.out_path)
+    split_and_save_dataset(args.data_path, dpr_dataset, args.out_path)
 
 
 if __name__ == "__main__":

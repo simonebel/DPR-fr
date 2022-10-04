@@ -1,0 +1,9 @@
+defaults:
+  - ctx_sources: insee_source
+  - datasets : retriever_statcheck
+
+eval_base : /media/simon/Samsung_T5/CEDAR/data/datasets/dpr-eval
+type : 
+src_ckpt :
+dest_path :
+test_set_path : 

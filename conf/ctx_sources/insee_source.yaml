@@ -1,11 +1,7 @@
 # @package _group_
-
-dpr_wiki:
-  _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w100
-  id_prefix: 'wiki:'
-
 dpr_insee:
   _target_: dpr.data.retriever_data.CsvCtxSrc
   file: /media/simon/Samsung_T5/CEDAR/data/datasets/dpr_psgs/psgs_insee.tsv
-  id_prefix: 'insee:'
+
+insee_tables:
+  file: /media/simon/Samsung_T5/CEDAR/data/table_metadata.pkl
